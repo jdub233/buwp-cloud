@@ -1,0 +1,13 @@
+node_modules/
+
+# Credentials and local overrides
+.env
+.env.*
+
+# Deployment context and anything account-specific stays out of this repo
+context.json
+context-*.json
+*.local.json
+.buwp-cloud/
+
+.DS_Store
