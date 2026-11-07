@@ -4,6 +4,7 @@
   "private": true,
   "description": "Command-line tools for operating Boston University's WordPress clusters on AWS ECS",
   "type": "module",
+  "main": "lib/index.js",
   "bin": {
     "buwp-cloud": "bin/buwp-cloud.js"
   },
@@ -12,7 +13,7 @@
     "lib/"
   ],
   "scripts": {
-    "test": "node --test",
+    "test": "node --test 'test/**/*.test.js'",
     "buwp-cloud": "node bin/buwp-cloud.js",
     "lint": "eslint ."
   },
@@ -29,6 +30,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1164.0",
     "chalk": "^4.1.2",
     "commander": "^11.0.0"
   },

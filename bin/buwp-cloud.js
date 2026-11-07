@@ -11,6 +11,9 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+// Import commands
+import clustersCommand from '../lib/commands/clusters.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const packageJson = JSON.parse(
@@ -26,24 +29,40 @@ program
 
 // Commands are registered here as they land, one module per command in lib/commands/<name>.js.
 
+/** Commander option parser that collects a repeatable flag into an array. */
+const collect = (value, previous) => [...previous, value];
+
+// Clusters command
+program
+  .command('clusters')
+  .description('List the WordPress clusters your AWS profiles can reach')
+  .option('--profile <name>',
+    'AWS profile to search; repeat for more (default: the config file, then the default credential chain)',
+    collect, [])
+  .option('--json', 'Output JSON')
+  .action(async (options) => {
+    process.exitCode = await clustersCommand(options);
+  });
+
+// Show help if no command provided. This has to run before parsing: once subcommands exist,
+// commander answers a bare invocation itself, with help on stderr.
+if (!process.argv.slice(2).length) {
+  program.outputHelp();
+  process.exit(0);
+}
+
 // Error handling
 program.exitOverride();
 
-// Commander signals a normal help or version exit by throwing. `--help` throws
-// commander.helpDisplayed, which buwp-local's list omits, so its `--help` exits 1.
-const NORMAL_EXITS = new Set(['commander.help', 'commander.helpDisplayed', 'commander.version']);
-
 try {
-  program.parse(process.argv);
+  await program.parseAsync(process.argv);
 } catch (err) {
-  if (NORMAL_EXITS.has(err.code)) {
-    process.exit(0);
+  // Commander has already printed its own message for help, version and usage errors, and its
+  // exitCode says which it was: 0 for `--help` and `--version`, 1 for a usage error. (buwp-local
+  // exits 0 only for a fixed list of codes, which misses `--help`, so its `--help` exits 1.)
+  if (err.code?.startsWith('commander.')) {
+    process.exit(err.exitCode);
   }
   console.error(chalk.red('Error:'), err.message);
   process.exit(1);
-}
-
-// Show help if no command provided
-if (!process.argv.slice(2).length) {
-  program.outputHelp();
 }
