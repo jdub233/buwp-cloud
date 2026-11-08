@@ -30,6 +30,7 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-ecs": "^3.1164.0",
     "@aws-sdk/client-s3": "^3.1164.0",
     "chalk": "^4.1.2",
     "commander": "^11.0.0"

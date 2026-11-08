@@ -14,6 +14,7 @@ import { dirname, join } from 'path';
 // Import commands
 import clustersCommand from '../lib/commands/clusters.js';
 import configCommand from '../lib/commands/config.js';
+import statusCommand from '../lib/commands/status.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +44,16 @@ program
   .option('--json', 'Output JSON')
   .action(async (options) => {
     process.exitCode = await clustersCommand(options);
+  });
+
+// Status command
+program
+  .command('status <target>')
+  .description("Show a target's WordPress service, its tasks, and which task sessions will use")
+  .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect, [])
+  .option('--json', 'Output JSON')
+  .action(async (target, options) => {
+    process.exitCode = await statusCommand(target, options);
   });
 
 // Config command

@@ -44,16 +44,98 @@ export function contextBucket(stackName, region = 'us-east-1') {
   return `${stackName}-context-config-${ACCOUNT}-${region}`;
 }
 
+/** A task definition ARN for the example stack. */
+export function taskDefinitionArn(revision = 2) {
+  return `arn:aws:ecs:us-east-1:${ACCOUNT}:task-definition/wp-x-wp:${revision}`;
+}
+
+/**
+ * An ECS task as DescribeTasks returns it. The s3proxy container comes first, as the real API
+ * returns it, so tests catch code that takes the first container instead of naming `wordpress`.
+ */
+export function ecsTask({
+  id, revision = 2, startedAt = '2026-01-01T00:00:00Z', lastStatus = 'RUNNING',
+  exec = true, agent = 'RUNNING', wordpress = true, wordpressStatus = lastStatus,
+} = {}) {
+  const agents = (status) => (status ? [{ name: 'ExecuteCommandAgent', lastStatus: status }] : []);
+  return {
+    taskArn: `arn:aws:ecs:us-east-1:${ACCOUNT}:task/wp-x-wp-cluster-example-test/${id}`,
+    taskDefinitionArn: taskDefinitionArn(revision),
+    lastStatus,
+    startedAt,
+    enableExecuteCommand: exec,
+    containers: [
+      { name: 's3proxy', lastStatus: 'RUNNING', runtimeId: `${id}-s3proxy`, managedAgents: agents('RUNNING') },
+      ...(wordpress
+        ? [{ name: 'wordpress', lastStatus: wordpressStatus, runtimeId: `${id}-wordpress`, managedAgents: agents(agent) }]
+        : []),
+    ],
+  };
+}
+
+/** An ECS service as DescribeServices returns it, with one PRIMARY deployment. */
+export function ecsService({ desired = 1, running = 1, revision = 2 } = {}) {
+  return {
+    serviceName: 'wp-x-wp-service-example-test',
+    status: 'ACTIVE',
+    desiredCount: desired,
+    runningCount: running,
+    pendingCount: 0,
+    enableExecuteCommand: true,
+    deployments: [{
+      status: 'PRIMARY',
+      taskDefinition: taskDefinitionArn(revision),
+      rolloutState: 'COMPLETED',
+      desiredCount: desired,
+      runningCount: running,
+      pendingCount: 0,
+      failedTasks: 0,
+    }],
+  };
+}
+
+/** A task definition with the sidecar listed first, as the real API returns it. */
+export function ecsTaskDefinition({ image = 'example/wordpress:7' } = {}) {
+  return {
+    containerDefinitions: [
+      { name: 's3proxy', image: 'example/s3proxy:latest' },
+      { name: 'wordpress', image },
+    ],
+  };
+}
+
 /**
  * A fake AWS adapter.
  * @param {Record<string, {buckets?: Record<string, unknown>, error?: Error}>} byProfile - Per
  *   profile, either an error for listBucketNames or a map of bucket name to its context. A context
  *   that is an Error is thrown by getJson. Use the key "null" for the default chain.
+ * @param {{service?: object|null, tasks?: object[], taskDefinitions?: Record<string, object>,
+ *   error?: Error}} ecs - What the ECS calls return, for whichever target is asked about. An
+ *   error is thrown by describeService.
  */
-export function fakeAws(byProfile) {
+export function fakeAws(byProfile, ecs = {}) {
   const calls = [];
   return {
     calls,
+    async describeService(profile, region, cluster, service) {
+      calls.push(['describeService', profile, region, cluster, service]);
+      if (ecs.error) {
+        throw ecs.error;
+      }
+      return ecs.service ?? null;
+    },
+    async listServiceTasks(profile, region, cluster, service) {
+      calls.push(['listServiceTasks', profile, region, cluster, service]);
+      return (ecs.tasks ?? []).map((t) => t.taskArn);
+    },
+    async describeTasks(profile, region, cluster, taskArns) {
+      calls.push(['describeTasks', profile, region, cluster, taskArns]);
+      return (ecs.tasks ?? []).filter((t) => taskArns.includes(t.taskArn));
+    },
+    async describeTaskDefinition(profile, region, arn) {
+      calls.push(['describeTaskDefinition', profile, region, arn]);
+      return ecs.taskDefinitions?.[arn];
+    },
     async listBucketNames(profile) {
       calls.push(['listBucketNames', profile]);
       const entry = byProfile[String(profile)];
