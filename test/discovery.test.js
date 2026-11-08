@@ -168,6 +168,7 @@ describe('discoverTargets', () => {
     assert.deepEqual(targets.map((t) => t.name), ['wp-x-example-test']);
     assert.deepEqual(errors, [{
       profile: 'example-prd',
+      code: 'ExpiredToken',
       message: 'ExpiredToken: The security token included in the request is expired',
     }]);
   });
@@ -186,7 +187,9 @@ describe('discoverTargets', () => {
     const { targets, errors } = await discoverTargets({ profiles: ['example-nprd'], aws });
 
     assert.equal(targets.length, 1);
-    assert.deepEqual(errors, [{ profile: 'example-nprd', bucket: broken, message: 'AccessDenied: Access Denied' }]);
+    assert.deepEqual(errors, [{
+      profile: 'example-nprd', bucket: broken, code: 'AccessDenied', message: 'AccessDenied: Access Denied',
+    }]);
   });
 
   test('sorts targets by name across profiles', async () => {

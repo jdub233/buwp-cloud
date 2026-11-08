@@ -13,6 +13,7 @@ import { dirname, join } from 'path';
 
 // Import commands
 import clustersCommand from '../lib/commands/clusters.js';
+import configCommand from '../lib/commands/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,11 +38,25 @@ program
   .command('clusters')
   .description('List the WordPress clusters your AWS profiles can reach')
   .option('--profile <name>',
-    'AWS profile to search; repeat for more (default: the config file, then the default credential chain)',
+    'AWS profile to search; repeat for more (default: AWS_PROFILE, then the config file, then the default credential chain)',
     collect, [])
   .option('--json', 'Output JSON')
   .action(async (options) => {
     process.exitCode = await clustersCommand(options);
+  });
+
+// Config command
+program
+  .command('config')
+  .description('Show, create or check the .buwp-cloud.json config file')
+  .option('--show', 'Show the config file in effect and the profiles it resolves to (the default)')
+  .option('--init', 'Create .buwp-cloud.json in the current directory')
+  .option('--validate', 'Check the config file in effect')
+  .option('--profile <name>', 'With --init: an AWS profile to list; repeat for more', collect, [])
+  .option('-f, --force', 'With --init: replace an existing file')
+  .option('--json', 'With --show: output JSON')
+  .action(async (options) => {
+    process.exitCode = await configCommand(options);
   });
 
 // Show help if no command provided. This has to run before parsing: once subcommands exist,

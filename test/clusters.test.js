@@ -8,13 +8,17 @@ import clustersCommand, { formatTargetsTable } from '../lib/commands/clusters.js
 import { toTarget } from '../lib/index.js';
 import { wordpressContext, contextBucket, fakeAws, awsError } from './fixtures.js';
 
-/** Run the command against a fake AWS adapter and capture its output. */
-async function runClusters(options, byProfile, config = {}) {
+/**
+ * Run the command against a fake AWS adapter and capture its output. The env is empty unless
+ * given, so an AWS_PROFILE in the shell running the tests can't leak in.
+ */
+async function runClusters(options, byProfile, config = {}, env = {}) {
   let out = '';
   let err = '';
   const code = await clustersCommand(options, {
     aws: fakeAws(byProfile),
-    readConfig: () => config,
+    env,
+    readConfig: () => ({ config, files: config.profiles ? ['/x/.buwp-cloud.json'] : [] }),
     stdout: (s) => { out += s; },
     stderr: (s) => { err += s; },
   });
@@ -65,23 +69,39 @@ describe('clustersCommand', () => {
     assert.equal(err, '');
   });
 
-  test('--json prints the profiles searched, the targets and the errors', async () => {
+  test('--json prints the profiles searched and where they came from, the targets and the errors', async () => {
     const { code, out } = await runClusters({ profile: ['example-nprd'], json: true }, { 'example-nprd': healthy });
 
     assert.equal(code, 0);
     const parsed = JSON.parse(out);
     assert.deepEqual(parsed.profiles, ['example-nprd']);
+    assert.equal(parsed.profileSource, 'flag');
     assert.equal(parsed.targets[0].cluster, 'wp-x-wp-cluster-example-test');
     assert.deepEqual(parsed.errors, []);
   });
 
-  test('uses the config file profiles when no --profile is given', async () => {
+  test('uses the config file profiles when there is no --profile and no AWS_PROFILE', async () => {
     const { out } = await runClusters({ json: true }, { 'example-nprd': healthy }, { profiles: ['example-nprd'] });
 
-    assert.deepEqual(JSON.parse(out).profiles, ['example-nprd']);
+    const parsed = JSON.parse(out);
+    assert.deepEqual(parsed.profiles, ['example-nprd']);
+    assert.equal(parsed.profileSource, 'config');
+    assert.deepEqual(parsed.configFiles, ['/x/.buwp-cloud.json']);
   });
 
-  test('a partial failure warns on stderr and still exits 0', async () => {
+  test('an exported AWS_PROFILE beats the config file and shows by name', async () => {
+    const { out } = await runClusters(
+      {},
+      { 'example-nprd': healthy, 'example-prd': healthy },
+      { profiles: ['example-prd'] },
+      { AWS_PROFILE: 'example-nprd' }
+    );
+
+    assert.match(out, /wp-x-example-test\s+no\s+development\s+us-east-1\s+example-nprd/);
+    assert.doesNotMatch(out, /\(default\)|example-prd/);
+  });
+
+  test('a partial failure warns on stderr with a hint, and still exits 0', async () => {
     const { code, out, err } = await runClusters(
       { profile: ['example-nprd', 'example-prd'] },
       { 'example-nprd': healthy, 'example-prd': { error: awsError('ExpiredToken', 'expired') } }
@@ -90,6 +110,18 @@ describe('clustersCommand', () => {
     assert.equal(code, 0);
     assert.match(out, /wp-x-example-test/);
     assert.match(err, /Warning:.*example-prd: ExpiredToken: expired/);
+    assert.match(err, /\n {2}Check that AWS profile "example-prd" exists/);
+  });
+
+  test('--json carries the hint on the error', async () => {
+    const { out } = await runClusters(
+      { profile: ['example-prd'], json: true },
+      { 'example-prd': { error: awsError('ExpiredToken', 'expired') } }
+    );
+
+    const [error] = JSON.parse(out).errors;
+    assert.equal(error.code, 'ExpiredToken');
+    assert.match(error.hint, /"example-prd"/);
   });
 
   test('exits 1 when every profile fails', async () => {
@@ -114,6 +146,7 @@ describe('clustersCommand', () => {
     let err = '';
     const code = await clustersCommand({}, {
       aws: fakeAws({}),
+      env: {},
       readConfig: () => { throw new Error('Invalid JSON in /x/config.json: Unexpected token'); },
       stderr: (s) => { err += s; },
     });

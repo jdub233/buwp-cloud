@@ -10,4 +10,9 @@ context-*.json
 *.local.json
 .buwp-cloud/
 
+# Config for running buwp-cloud from this checkout. It names real AWS profiles, so it never goes
+# into this public repo; a private repo that uses buwp-cloud can commit its own.
+.buwp-cloud.json
+.buwp-cloud.override.json
+
 .DS_Store
