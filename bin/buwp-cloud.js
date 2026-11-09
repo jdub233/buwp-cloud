@@ -16,6 +16,7 @@ import clustersCommand from '../lib/commands/clusters.js';
 import configCommand from '../lib/commands/config.js';
 import statusCommand from '../lib/commands/status.js';
 import shellCommand from '../lib/commands/shell.js';
+import { dbTunnelCommand, dbPasswordCommand, DEFAULT_LOCAL_PORT } from '../lib/commands/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,6 +67,30 @@ program
   .option('--print', 'Print the AWS CLI command instead of running it')
   .action(async (target, options) => {
     process.exitCode = await shellCommand(target, options);
+  });
+
+// Database commands
+const db = program
+  .command('db')
+  .description("Reach the database a target's WordPress uses");
+
+db
+  .command('tunnel <target>')
+  .description('Forward a local port to the database, through a running WordPress task')
+  .option('--port <number>', `Local port to listen on (default: ${DEFAULT_LOCAL_PORT})`)
+  .option('--task <id>', 'Use this task instead of the one buwp-cloud picks (see status)')
+  .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect, [])
+  .option('--print', 'Print the AWS CLI command instead of running it')
+  .action(async (target, options) => {
+    process.exitCode = await dbTunnelCommand(target, options);
+  });
+
+db
+  .command('password <target>')
+  .description('Print the database password, for example to pipe into pbcopy')
+  .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect, [])
+  .action(async (target, options) => {
+    process.exitCode = await dbPasswordCommand(target, options);
   });
 
 // Config command

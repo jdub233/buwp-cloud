@@ -94,12 +94,30 @@ export function ecsService({ desired = 1, running = 1, revision = 2 } = {}) {
   };
 }
 
-/** A task definition with the sidecar listed first, as the real API returns it. */
-export function ecsTaskDefinition({ image = 'example/wordpress:7' } = {}) {
+/** The database password reference the example task definition carries. */
+export const DB_PASSWORD_REF =
+  `arn:aws:secretsmanager:us-east-1:${ACCOUNT}:secret:wp/example-test-AbCdEf:password::`;
+
+/**
+ * A task definition with the sidecar listed first, as the real API returns it. The wordpress
+ * container carries the database settings bu-wp-ecs sets.
+ */
+export function ecsTaskDefinition({
+  image = 'example/wordpress:7', dbHost = 'db.example.internal:3306', passwordRef = DB_PASSWORD_REF,
+} = {}) {
   return {
     containerDefinitions: [
-      { name: 's3proxy', image: 'example/s3proxy:latest' },
-      { name: 'wordpress', image },
+      { name: 's3proxy', image: 'example/s3proxy:latest', environment: [] },
+      {
+        name: 'wordpress',
+        image,
+        environment: [
+          { name: 'WORDPRESS_DB_USER', value: 'root' },
+          ...(dbHost ? [{ name: 'WORDPRESS_DB_HOST', value: dbHost }] : []),
+          { name: 'WORDPRESS_DB_NAME', value: 'wp_db' },
+        ],
+        secrets: passwordRef ? [{ name: 'WORDPRESS_DB_PASSWORD', valueFrom: passwordRef }] : [],
+      },
     ],
   };
 }
@@ -110,8 +128,9 @@ export function ecsTaskDefinition({ image = 'example/wordpress:7' } = {}) {
  *   profile, either an error for listBucketNames or a map of bucket name to its context. A context
  *   that is an Error is thrown by getJson. Use the key "null" for the default chain.
  * @param {{service?: object|null, tasks?: object[], taskDefinitions?: Record<string, object>,
- *   error?: Error}} ecs - What the ECS calls return, for whichever target is asked about. An
- *   error is thrown by describeService.
+ *   error?: Error, secrets?: Record<string, string|Error>}} ecs - What the ECS and Secrets Manager
+ *   calls return, for whichever target is asked about. An error is thrown by describeService.
+ *   secrets maps a secret ID to its string, or to an error getSecretString throws.
  */
 export function fakeAws(byProfile, ecs = {}) {
   const calls = [];
@@ -136,6 +155,17 @@ export function fakeAws(byProfile, ecs = {}) {
       calls.push(['describeTaskDefinition', profile, region, arn]);
       return ecs.taskDefinitions?.[arn];
     },
+    async getSecretString(profile, region, secretId, versions) {
+      calls.push(['getSecretString', profile, region, secretId, versions]);
+      const value = ecs.secrets?.[secretId];
+      if (value instanceof Error) {
+        throw value;
+      }
+      if (value === undefined) {
+        throw awsError('ResourceNotFoundException', `Secrets Manager can't find ${secretId}`);
+      }
+      return value;
+    },
     async listBucketNames(profile) {
       calls.push(['listBucketNames', profile]);
       const entry = byProfile[String(profile)];
@@ -153,6 +183,16 @@ export function fakeAws(byProfile, ecs = {}) {
       return value;
     },
   };
+}
+
+/** A MySQL server greeting: packet header, protocol 10, NUL-terminated version, then more. */
+export function mysqlGreeting(version = '8.0.44') {
+  return Buffer.concat([
+    Buffer.from([0x4a, 0x00, 0x00, 0x00, 10]),
+    Buffer.from(version, 'latin1'),
+    Buffer.from([0]),
+    Buffer.alloc(20, 1),
+  ]);
 }
 
 /** An error shaped like an AWS SDK service exception. */

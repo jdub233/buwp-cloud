@@ -59,6 +59,15 @@ test('shell --help documents --task, --profile and --print', () => {
   assert.match(result.stdout, /--print/);
 });
 
+test('db tunnel --help documents --port, --task and --print', () => {
+  const result = run('db', 'tunnel', '--help');
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: buwp-cloud db tunnel \[options\] <target>/);
+  assert.match(result.stdout, /--port <number>/);
+  assert.match(result.stdout, /--task <id>/);
+  assert.match(result.stdout, /--print/);
+});
+
 test('clusters --help documents --profile and --json', () => {
   const result = run('clusters', '--help');
   assert.equal(result.status, 0);
