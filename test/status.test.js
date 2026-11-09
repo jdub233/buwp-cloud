@@ -91,6 +91,7 @@ describe('formatStatus', () => {
     });
 
     assert.match(text, /^Target +wp-x-example-test \(unset\) {2}<PROD \(environmentType unset or unknown\)>$/m);
+    assert.match(text, /Sessions will use task older: /);
   });
 
   test('a service with no tasks says so', async () => {

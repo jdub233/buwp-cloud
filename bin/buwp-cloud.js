@@ -15,6 +15,7 @@ import { dirname, join } from 'path';
 import clustersCommand from '../lib/commands/clusters.js';
 import configCommand from '../lib/commands/config.js';
 import statusCommand from '../lib/commands/status.js';
+import shellCommand from '../lib/commands/shell.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,17 @@ program
   .option('--json', 'Output JSON')
   .action(async (target, options) => {
     process.exitCode = await statusCommand(target, options);
+  });
+
+// Shell command
+program
+  .command('shell <target>')
+  .description('Open an interactive shell in a running WordPress container')
+  .option('--task <id>', 'Use this task instead of the one buwp-cloud picks (see status)')
+  .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect, [])
+  .option('--print', 'Print the AWS CLI command instead of running it')
+  .action(async (target, options) => {
+    process.exitCode = await shellCommand(target, options);
   });
 
 // Config command

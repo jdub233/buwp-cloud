@@ -50,6 +50,15 @@ test('an unknown command exits 1 with one error message', () => {
   assert.equal(result.stderr.match(/unknown command/g)?.length, 1);
 });
 
+test('shell --help documents --task, --profile and --print', () => {
+  const result = run('shell', '--help');
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: buwp-cloud shell \[options\] <target>/);
+  assert.match(result.stdout, /--task <id>/);
+  assert.match(result.stdout, /--profile <name>/);
+  assert.match(result.stdout, /--print/);
+});
+
 test('clusters --help documents --profile and --json', () => {
   const result = run('clusters', '--help');
   assert.equal(result.status, 0);
