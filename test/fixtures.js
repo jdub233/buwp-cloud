@@ -53,9 +53,12 @@ export function taskDefinitionArn(revision = 2) {
  * An ECS task as DescribeTasks returns it. The s3proxy container comes first, as the real API
  * returns it, so tests catch code that takes the first container instead of naming `wordpress`.
  */
+export const IMAGE_DIGEST = `sha256:0123456789ab${'0'.repeat(52)}`;
+
 export function ecsTask({
   id, revision = 2, startedAt = '2026-01-01T00:00:00Z', lastStatus = 'RUNNING',
   exec = true, agent = 'RUNNING', wordpress = true, wordpressStatus = lastStatus,
+  digest = IMAGE_DIGEST,
 } = {}) {
   const agents = (status) => (status ? [{ name: 'ExecuteCommandAgent', lastStatus: status }] : []);
   return {
@@ -67,7 +70,14 @@ export function ecsTask({
     containers: [
       { name: 's3proxy', lastStatus: 'RUNNING', runtimeId: `${id}-s3proxy`, managedAgents: agents('RUNNING') },
       ...(wordpress
-        ? [{ name: 'wordpress', lastStatus: wordpressStatus, runtimeId: `${id}-wordpress`, managedAgents: agents(agent) }]
+        ? [{
+          name: 'wordpress',
+          lastStatus: wordpressStatus,
+          runtimeId: `${id}-wordpress`,
+          managedAgents: agents(agent),
+          image: 'example/wordpress:7',
+          imageDigest: digest,
+        }]
         : []),
     ],
   };

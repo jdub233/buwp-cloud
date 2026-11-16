@@ -4,7 +4,14 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatTable, formatDuration, formatJobRunner } from '../lib/index.js';
+import { formatTable, formatDuration, formatJobRunner, shortDigest } from '../lib/index.js';
+
+describe('shortDigest', () => {
+  test('keeps the first 12 hex digits, or a dash without a digest', () => {
+    assert.equal(shortDigest(`sha256:300040af294d${'0'.repeat(52)}`), '300040af294d');
+    assert.equal(shortDigest(null), '-');
+  });
+});
 
 describe('formatTable', () => {
   test('pads columns to the widest cell and trims trailing space', () => {

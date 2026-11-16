@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   taskIdFromArn, taskDefinitionLabel, summarizeTask, execBlocker, pickTask,
 } from '../lib/index.js';
-import { ecsTask, taskDefinitionArn } from './fixtures.js';
+import { ecsTask, taskDefinitionArn, IMAGE_DIGEST } from './fixtures.js';
 
 const summary = (opts) => summarizeTask(ecsTask(opts));
 
@@ -26,7 +26,13 @@ describe('summarizeTask', () => {
     assert.equal(s.taskId, 't1');
     assert.equal(s.taskDefinition, 'wp-x-wp:2');
     assert.equal(s.execEnabled, true);
-    assert.deepEqual(s.wordpress, { runtimeId: 't1-wordpress', lastStatus: 'RUNNING', execAgent: 'RUNNING' });
+    assert.deepEqual(s.wordpress, {
+      runtimeId: 't1-wordpress',
+      lastStatus: 'RUNNING',
+      execAgent: 'RUNNING',
+      image: 'example/wordpress:7',
+      imageDigest: IMAGE_DIGEST,
+    });
   });
 
   test('a task without a wordpress container has none', () => {
@@ -107,7 +113,9 @@ describe('pickTask', () => {
 
   test('a pinned task must belong to the service and be ready', () => {
     const tasks = [summary({ id: 'a' }), summary({ id: 'blocked', agent: 'STOPPED' })];
-    assert.match(pickTask(tasks, { taskId: 'zzz' }).reason, /zzz is not a running task of this service/);
+    const notOurs = pickTask(tasks, { taskId: 'zzz' }).reason;
+    assert.match(notOurs, /zzz isn't one of this service's running tasks/);
+    assert.match(notOurs, /Job-runner tasks.*can't take sessions/, 'explains the likely case');
     assert.match(pickTask(tasks, { taskId: 'blocked' }).reason, /blocked can't take a session: the exec agent is STOPPED/);
   });
 });

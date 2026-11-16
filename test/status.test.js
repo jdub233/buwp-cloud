@@ -71,9 +71,26 @@ describe('formatStatus', () => {
     assert.match(text, /^Deployments {2}PRIMARY wp-x-wp:2, rollout COMPLETED, 2 running of 2$/m);
     assert.match(text, /^Image {8}example\/wordpress:7$/m);
     assert.match(text, /^Job runner {3}rate\(5 minutes\)$/m);
-    assert.match(text, /^older +5h 30m +wp-x-wp:2 +ready +<- sessions use this$/m);
-    assert.match(text, /^newer +2h 30m +wp-x-wp:2 +ready$/m);
+    assert.match(text, /^TASK +UP +TASK DEF +DIGEST +EXEC$/m);
+    assert.match(text, /^older +5h 30m +wp-x-wp:2 +0123456789ab +ready +<- sessions use this$/m);
+    assert.match(text, /^newer +2h 30m +wp-x-wp:2 +0123456789ab +ready$/m);
     assert.match(text, /Sessions will use task older: oldest ready task on the current deployment\.$/);
+  });
+
+  test('shows which build each task runs, even under the same tag', async () => {
+    const ecs = {
+      ...healthyEcs(),
+      tasks: [
+        ecsTask({ id: 'before', digest: `sha256:aaaaaaaaaaaa${'1'.repeat(52)}` }),
+        ecsTask({ id: 'after', digest: `sha256:bbbbbbbbbbbb${'2'.repeat(52)}` }),
+      ],
+    };
+    const status = await gatherStatus(target(), fakeAws({}, ecs));
+    const text = formatStatus(status, { now: NOW });
+
+    assert.match(text, /^before .* aaaaaaaaaaaa /m);
+    assert.match(text, /^after .* bbbbbbbbbbbb /m);
+    assert.equal(status.tasks[1].wordpress.imageDigest, `sha256:bbbbbbbbbbbb${'2'.repeat(52)}`, 'JSON keeps the full digest');
   });
 
   test('says why a task can\'t take a session', async () => {
