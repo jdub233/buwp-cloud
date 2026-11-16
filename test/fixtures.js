@@ -108,16 +108,31 @@ export function ecsService({ desired = 1, running = 1, revision = 2 } = {}) {
 export const DB_PASSWORD_REF =
   `arn:aws:secretsmanager:us-east-1:${ACCOUNT}:secret:wp/example-test-AbCdEf:password::`;
 
+/** The WordPress log group the example task definition names, with a CDK-style suffix. */
+export const LOG_GROUP = 'wp-x-example-test-wpxwplogs0123ABCD-AbCdEfGhIjKl';
+
+/** An awslogs logConfiguration, as a task definition's container carries it. */
+const awslogs = (group, prefix) => ({
+  logDriver: 'awslogs',
+  options: { 'awslogs-group': group, 'awslogs-region': 'us-east-1', 'awslogs-stream-prefix': prefix },
+});
+
 /**
  * A task definition with the sidecar listed first, as the real API returns it. The wordpress
- * container carries the database settings bu-wp-ecs sets.
+ * container carries the database and log settings bu-wp-ecs sets.
  */
 export function ecsTaskDefinition({
   image = 'example/wordpress:7', dbHost = 'db.example.internal:3306', passwordRef = DB_PASSWORD_REF,
+  logConfiguration = awslogs(LOG_GROUP, 'wp-x-wp'),
 } = {}) {
   return {
     containerDefinitions: [
-      { name: 's3proxy', image: 'example/s3proxy:latest', environment: [] },
+      {
+        name: 's3proxy',
+        image: 'example/s3proxy:latest',
+        environment: [],
+        logConfiguration: awslogs('wp-x-example-test-s3proxylogs0123ABCD-AbCdEfGhIjKl', 's3proxy'),
+      },
       {
         name: 'wordpress',
         image,
@@ -127,8 +142,20 @@ export function ecsTaskDefinition({
           { name: 'WORDPRESS_DB_NAME', value: 'wp_db' },
         ],
         secrets: passwordRef ? [{ name: 'WORDPRESS_DB_PASSWORD', valueFrom: passwordRef }] : [],
+        ...(logConfiguration ? { logConfiguration } : {}),
       },
     ],
+  };
+}
+
+/** A log event as FilterLogEvents returns it, from the example's wordpress stream for `taskId`. */
+export function logEvent({ taskId = 'task1', timestamp = Date.UTC(2026, 0, 1, 5, 0, 0), message = 'GET / 200', eventId } = {}) {
+  return {
+    logStreamName: `wp-x-wp/wordpress/${taskId}`,
+    timestamp,
+    message,
+    ingestionTime: timestamp + 500,
+    eventId: eventId ?? `${taskId}-${timestamp}`,
   };
 }
 
@@ -138,9 +165,11 @@ export function ecsTaskDefinition({
  *   profile, either an error for listBucketNames or a map of bucket name to its context. A context
  *   that is an Error is thrown by getJson. Use the key "null" for the default chain.
  * @param {{service?: object|null, tasks?: object[], taskDefinitions?: Record<string, object>,
- *   error?: Error, secrets?: Record<string, string|Error>}} ecs - What the ECS and Secrets Manager
- *   calls return, for whichever target is asked about. An error is thrown by describeService.
- *   secrets maps a secret ID to its string, or to an error getSecretString throws.
+ *   error?: Error, secrets?: Record<string, string|Error>,
+ *   logs?: (params: object, call: number) => {events: object[], nextToken?: string}}} ecs - What
+ *   the ECS, Secrets Manager and CloudWatch Logs calls return, for whichever target is asked about.
+ *   An error is thrown by describeService. secrets maps a secret ID to its string, or to an error
+ *   getSecretString throws. logs answers each filterLogEvents call (numbered from 0), or throws.
  */
 export function fakeAws(byProfile, ecs = {}) {
   const calls = [];
@@ -175,6 +204,12 @@ export function fakeAws(byProfile, ecs = {}) {
         throw awsError('ResourceNotFoundException', `Secrets Manager can't find ${secretId}`);
       }
       return value;
+    },
+    async filterLogEvents(profile, region, params) {
+      const call = calls.filter(([name]) => name === 'filterLogEvents').length;
+      calls.push(['filterLogEvents', profile, region, params]);
+      const page = ecs.logs ? ecs.logs(params, call) : { events: [] };
+      return { events: page.events ?? [], nextToken: page.nextToken ?? null };
     },
     async listBucketNames(profile) {
       calls.push(['listBucketNames', profile]);

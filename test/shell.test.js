@@ -81,7 +81,19 @@ describe('shell', () => {
 
     assert.equal(code, 0);
     assert.equal(ran.length, 1);
-    assert.match(err, /PRODUCTION: wp-x-example-test \(environmentType production; profile example-nprd\)\n.*Opening a shell/);
+    assert.match(err, /PRODUCTION: wp-x-example-test \(environmentType production; profile example-nprd\)\n[\s\S]*Opening a shell/);
+  });
+
+  test('warns before opening when the service runs a single task, and not otherwise', async () => {
+    const single = await runShell({}, { ecs: oneTask() });
+    assert.match(single.err, /Note: wp-x-wp-service-example-test runs a single task[^\n]*\nOpening a shell/);
+
+    const ecs = { service: ecsService({ desired: 2, running: 2 }), tasks: [ecsTask({ id: 'task1' })] };
+    const two = await runShell({}, { ecs });
+    assert.doesNotMatch(two.err, /single task/);
+
+    const print = await runShell({ print: true }, { ecs: oneTask() });
+    assert.match(print.err, /# wp-x-wp-service-example-test runs a single task/);
   });
 
   test('labels production in --print too, on stderr only', async () => {
