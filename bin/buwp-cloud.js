@@ -136,6 +136,7 @@ program
   .option('--grep <text>', 'Only events containing this text (case-sensitive)')
   .option('--filter-pattern <pattern>', 'Only events matching a CloudWatch filter pattern')
   .option('--task <id>', "Only this task's events; any task, including a stopped job-runner task")
+  .option('--sessions', 'Search ECS Exec session transcripts instead: what each shell or exec session printed')
   .option('--health-checks', 'Include passing ALB health checks, which are hidden by default')
   .option('-f, --follow', 'Keep printing new events until interrupted')
   .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect)

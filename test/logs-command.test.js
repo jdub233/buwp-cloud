@@ -52,7 +52,24 @@ describe('logs', () => {
     assert.equal(code, 0);
     assert.equal(out, '2026-01-01 05:29:00 abcdef01 PHP Warning: example\n');
     assert.match(err, new RegExp(`^wp-x-example-test: ${LOG_GROUP}, all tasks, since 2026-01-01 05:20:00\\.\n$`));
-    assert.deepEqual(requests, [{ profile: 'example-nprd', region: 'us-east-1', logGroupName: LOG_GROUP, startTime: NOW - 600_000 }]);
+    assert.deepEqual(requests, [{
+      profile: 'example-nprd',
+      region: 'us-east-1',
+      logGroupName: LOG_GROUP,
+      logStreamNamePrefix: 'wp-x-wp/wordpress/',
+      startTime: NOW - 600_000,
+    }]);
+  });
+
+  test('--sessions searches the ECS Exec transcripts instead, labeled by session', async () => {
+    const transcript = { ...logEvent({ timestamp: NOW - 60_000, message: 'Script started on …' }), logStreamName: 'ecs-execute-command-s3ss10nid' };
+    const { code, out, err, requests } = await runLogs({ sessions: true, grep: 'wp option' }, answers(() => ({ events: [transcript] })));
+
+    assert.equal(code, 0);
+    assert.equal(requests[0].logStreamNamePrefix, 'ecs-execute-command-');
+    assert.equal(requests[0].filterPattern, '"wp option"');
+    assert.equal(out, '2026-01-01 05:29:00 s3ss10ni Script started on …\n');
+    assert.match(err, /, ECS Exec session transcripts, since /);
   });
 
   test('--since, --until, --grep and --task narrow the search', async () => {
@@ -98,6 +115,7 @@ describe('logs', () => {
     assert.deepEqual(JSON.parse(out), {
       target: 'wp-x-example-test',
       logGroup: LOG_GROUP,
+      logStreamPrefix: 'wp-x-wp/wordpress/',
       region: 'us-east-1',
       task: null,
       filterPattern: '"hello"',
@@ -107,6 +125,7 @@ describe('logs', () => {
       events: [{
         timestamp: new Date(NOW - 1000).toISOString(),
         taskId: 'abc',
+        session: null,
         stream: 'wp-x-wp/wordpress/abc',
         message: 'hello',
         eventId: 'e1',
@@ -190,6 +209,7 @@ describe('logs', () => {
   test('rejects option combinations and times it can\'t use, before any AWS call', async () => {
     const cases = [
       [{ grep: 'a', filterPattern: 'b' }, /Use --grep or --filter-pattern, not both/],
+      [{ sessions: true, task: 'abc' }, /--sessions can't be combined with --task/],
       [{ follow: true, json: true }, /--follow can't be combined with --json/],
       [{ follow: true, until: '1h' }, /--follow can't be combined with --until/],
       [{ since: 'yesterday' }, /"yesterday" isn't a time/],

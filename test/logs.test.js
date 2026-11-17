@@ -6,7 +6,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   logConfigFromTaskDefinition, taskStreamName, grepPattern, parseTime, toLogEvent, fetchLogEvents,
-  localTime, HEALTH_CHECK_PATH, isPassingHealthCheck,
+  localTime, HEALTH_CHECK_PATH, isPassingHealthCheck, containerStreamPrefix, SESSION_STREAM_PREFIX,
 } from '../lib/index.js';
 import { ecsTaskDefinition, fakeAws, logEvent, LOG_GROUP } from './fixtures.js';
 
@@ -33,6 +33,19 @@ describe('taskStreamName', () => {
     const config = { streamPrefix: 'wp-x-wp' };
     assert.equal(taskStreamName(config, 'abc123'), 'wp-x-wp/wordpress/abc123');
     assert.equal(taskStreamName(config, 'arn:aws:ecs:us-east-1:123456789012:task/c/abc123'), 'wp-x-wp/wordpress/abc123');
+  });
+});
+
+describe('containerStreamPrefix', () => {
+  test('covers every task\'s stream and stops short of the session transcripts', () => {
+    const prefix = containerStreamPrefix({ streamPrefix: 'wp-x-wp' });
+    assert.equal(prefix, 'wp-x-wp/wordpress/');
+    assert.ok(taskStreamName({ streamPrefix: 'wp-x-wp' }, 'abc123').startsWith(prefix));
+    assert.ok(!`${SESSION_STREAM_PREFIX}abc`.startsWith(prefix));
+  });
+
+  test('is null without a stream prefix, so nothing is filtered out', () => {
+    assert.equal(containerStreamPrefix({ streamPrefix: null }), null);
   });
 });
 
@@ -86,7 +99,13 @@ describe('parseTime', () => {
 describe('toLogEvent', () => {
   test('takes the task ID from the stream and drops a trailing newline', () => {
     const e = toLogEvent(logEvent({ taskId: 'abc', timestamp: 5, message: 'line\n', eventId: 'e1' }));
-    assert.deepEqual(e, { timestamp: 5, taskId: 'abc', stream: 'wp-x-wp/wordpress/abc', message: 'line', eventId: 'e1' });
+    assert.deepEqual(e, { timestamp: 5, taskId: 'abc', session: null, stream: 'wp-x-wp/wordpress/abc', message: 'line', eventId: 'e1' });
+  });
+
+  test('takes the session ID from a transcript\'s stream, which names no task', () => {
+    const e = toLogEvent({ ...logEvent(), logStreamName: `${SESSION_STREAM_PREFIX}s3ss10n` });
+    assert.equal(e.taskId, null);
+    assert.equal(e.session, 's3ss10n');
   });
 });
 
