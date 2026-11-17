@@ -5,6 +5,13 @@
  * The shapes follow what bu-wp-ecs and its sibling stacks actually write to their context buckets.
  */
 
+import chalk from 'chalk';
+
+// Tests compare plain text. The test runner can force color into its test processes (FORCE_COLOR,
+// or a color terminal), and chalk would then wrap the output in escape codes. chalk is one shared
+// instance per process and checks its level when it styles, so this covers the code under test.
+chalk.level = 0;
+
 export const ACCOUNT = '123456789012';
 
 /** A bu-wp-ecs WordPress context, with overrides merged at the top level. */
