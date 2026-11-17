@@ -18,6 +18,7 @@ import statusCommand from '../lib/commands/status.js';
 import shellCommand from '../lib/commands/shell.js';
 import execCommand from '../lib/commands/exec.js';
 import logsCommand, { DEFAULT_SINCE } from '../lib/commands/logs.js';
+import cpCommand from '../lib/commands/cp.js';
 import { dbTunnelCommand, dbPasswordCommand, DEFAULT_LOCAL_PORT } from '../lib/commands/db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,33 @@ Examples:
         + 'To run something in a container, put it after --: buwp-cloud <target> -- <command>');
     }
     process.exitCode = await execCommand(target, command, options);
+  });
+
+// Cp command
+program
+  .command('cp <source> <destination>')
+  .description('Copy one file into a running WordPress container, or out of one')
+  .option('--task <id>', 'Copy to or from this task (see status)')
+  .option('--all-tasks', 'Copy into every task of the service, so every request sees the change')
+  .option('--profile <name>', 'AWS profile to search; repeat for more (default: as for clusters)', collect)
+  .option('--print', 'Print the AWS CLI commands instead of copying (copies into a container only)')
+  .addHelpText('after', `
+One side is <target>:<absolute path in the container>; the other is a local path, or - for stdout
+when copying out.
+
+Copying in writes the file beside the destination under a temporary name, keeps the old file's
+owner and mode (a new file gets its directory's owner and mode 644), checks its sha256, runs
+php -l on .php files, and only then moves it into place. A file that fails a check leaves the old
+one untouched.
+
+A copy in is a hot patch: it lasts until the task is replaced. On a service with more than one
+task, choose --task for one task or --all-tasks for every one.
+
+Examples:
+  buwp-cloud cp ./fix.php <target>:/var/www/html/wp-content/mu-plugins/site-manager/fix.php
+  buwp-cloud cp <target>:/tmp/wp-job-12.log .`)
+  .action(async (source, destination, options) => {
+    process.exitCode = await cpCommand(source, destination, options);
   });
 
 // Logs command

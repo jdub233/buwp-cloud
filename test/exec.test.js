@@ -80,7 +80,7 @@ describe('exec', () => {
     assert.equal(args[args.indexOf('--container') + 1], 'wordpress');
     assert.equal(args[args.indexOf('--profile') + 1], 'example-nprd');
     assert.match(args[args.indexOf('--command') + 1], / buwp:wp-option-get$/);
-    assert.match(sentScript(started[0]), /^rc=\$\( \{ \{ wp option get home <\/dev\/null /m);
+    assert.match(sentScript(started[0]), /^rc=\$\( \{ \{ \{ wp option get home\n\} <\/dev\/null /m);
     assert.deepEqual(opts.stdio, ['pipe', 'pipe', 'inherit'], 'stdin stays an open pipe');
   });
 
@@ -112,7 +112,7 @@ describe('exec', () => {
 
     assert.equal(code, 0);
     assert.deepEqual(started, []);
-    assert.match(out, /^script=\$\(cat <<'BUWP_SCRIPT'\nexport PAGER=cat\nwp option get home <\/dev\/null\n/);
+    assert.match(out, /^buwp_script\(\) \{\ncat <<'BUWP_SCRIPT'\nexport PAGER=cat\nwp option get home <\/dev\/null\n/);
     assert.match(out, /\naws ecs execute-command --cluster wp-x-wp-cluster-example-test --task task1 /);
     assert.doesNotMatch(out, /SHELL_PIPE/, 'composed for the terminal a person will paste it into');
     assert.match(err, /# wp-x-example-test, task task1/);

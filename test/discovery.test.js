@@ -98,6 +98,12 @@ describe('toTarget', () => {
     assert.equal(target.environmentType, 'development');
   });
 
+  test('reports autoscaling as bu-wp-ecs reads it: on for any truthy AUTOSCALING', () => {
+    assert.equal(toTarget(wordpressContext()).autoscaling, false);
+    assert.equal(toTarget(wordpressContext({ AUTOSCALING: true })).autoscaling, true);
+    assert.equal(toTarget(wordpressContext({ AUTOSCALING: false })).autoscaling, false);
+  });
+
   test('reports the job runner schedule and whether it is enabled', () => {
     assert.deepEqual(toTarget(wordpressContext()).jobRunner, { schedule: 'rate(5 minutes)', enabled: true });
     assert.deepEqual(

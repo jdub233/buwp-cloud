@@ -6,9 +6,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'child_process';
+import { mkdtempSync, readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
-  newNonce, sessionLabel, commandLine, captureScript, printableScript, remoteCommand,
-  printedCommand, createOutputSplitter, toTarget,
+  newNonce, sessionLabel, commandLine, captureScript, wrapCapture, printableScript, remoteCommand,
+  printedCommand, createOutputSplitter, sessionFailure, toTarget,
 } from '../lib/index.js';
 import { wordpressContext } from './fixtures.js';
 
@@ -87,6 +90,28 @@ describe('captureScript', () => {
     assert.equal(stderr, 'err\n');
   });
 
+  test('in sh, leaves a command\'s own redirections alone', () => {
+    // cp's pieces append to a file with >>. Before the command had its own { }, the capture's
+    // 1>&3 came after that >> and won, so the pieces went to the terminal instead.
+    const dir = mkdtempSync(join(tmpdir(), 'buwp-capture-'));
+    const file = join(dir, 'staged');
+    const script = wrapCapture(`printf '%s' "$1" >> '${file}'`, { nonce: NONCE });
+    const run = spawnSync('sh', ['-c', script, 'sh', 'piece-one'], { encoding: 'utf8' });
+
+    assert.equal(split(run.stdout).status, 0);
+    assert.equal(split(run.stdout).stdout, '');
+    assert.equal(readFileSync(file, 'utf8'), 'piece-one');
+  });
+
+  test('in sh, captures every command of a list, and reports the last one\'s status', () => {
+    const script = wrapCapture('echo one; echo two >&2; false', { nonce: NONCE });
+    const { stdout, stderr, status } = split(spawnSync('sh', ['-c', script], { encoding: 'utf8' }).stdout);
+
+    assert.equal(stdout, 'one\n');
+    assert.equal(stderr, 'two\n');
+    assert.equal(status, 1);
+  });
+
   test('in sh, gives the command end-of-file on stdin instead of waiting', () => {
     const script = captureScript(['sh', '-c', 'read answer; echo "read status $?"'], { nonce: NONCE });
     const run = spawnSync('sh', ['-c', script], { encoding: 'utf8', input: 'yes\n' });
@@ -104,6 +129,35 @@ describe('remoteCommand', () => {
     assert.ok(match, command);
     assert.equal(Buffer.from(match[1], 'base64').toString('utf8'), script);
   });
+
+  test('passes base64 arguments to sh -s, encoded once', () => {
+    assert.match(remoteCommand('echo', 'buwp:cp', ['YWJj']), / \| sh -s YWJj" buwp:cp$/);
+    assert.throws(() => remoteCommand('echo', 'buwp:cp', ['not base64!']), /have to be base64/);
+  });
+
+  test('carries the script\'s arguments through, in sh', () => {
+    const script = 'printf "%s|" "$1"';
+    const inner = remoteCommand(script, 'buwp:x', ['YWJj']).match(/^sh -c "(.*)" buwp:x$/)[1];
+    const run = spawnSync('sh', ['-c', inner], { encoding: 'utf8' });
+
+    assert.equal(run.stdout, 'YWJj|');
+  });
+});
+
+describe('sessionFailure', () => {
+  test('is null when the run reported a status', () => {
+    assert.equal(sessionFailure({ awsExit: 0, started: true, status: 3, other: [] }), null);
+  });
+
+  test('passes on the aws exit code and what the plugin said when nothing started', () => {
+    assert.deepEqual(sessionFailure({ awsExit: 254, started: false, status: null, other: ['', 'too large'] }), {
+      code: 254, message: 'The session ended before the command started (aws exited 254).', hint: null, details: ['too large'],
+    });
+  });
+
+  test('is 255 when the command started but its status never came back', () => {
+    assert.equal(sessionFailure({ awsExit: 0, started: true, status: null, other: [] }).code, 255);
+  });
 });
 
 describe('printedCommand', () => {
@@ -114,21 +168,44 @@ describe('printedCommand', () => {
   test('shows the readable script and no base64', () => {
     const text = printedCommand(target, task, printableScript(words), 'buwp:wp-eval');
 
-    assert.match(text, /^script=\$\(cat <<'BUWP_SCRIPT'\nexport PAGER=cat\nwp eval /);
-    assert.match(text, /^echo "exit status: \$\?"\nBUWP_SCRIPT\n\)\naws ecs execute-command /m);
+    assert.match(text, /^buwp_script\(\) \{\ncat <<'BUWP_SCRIPT'\nexport PAGER=cat\nwp eval /);
+    assert.match(text, /^echo "exit status: \$\?"\nBUWP_SCRIPT\n\}\naws ecs execute-command /m);
     assert.match(text, /--container wordpress --interactive --command "sh -c /);
     assert.match(text, /--region us-east-1 --profile example-nprd\n$/);
   });
 
-  test('sends exactly the script when run in sh', () => {
-    const script = printableScript(words);
-    const stub = 'aws() { while [ $# -gt 0 ]; do [ "$1" = --command ] && printf %s "$2"; shift; done; }';
-    const run = spawnSync('sh', ['-c', `${stub}\n${printedCommand(target, task, script, 'buwp:wp-eval')}`],
-      { encoding: 'utf8' });
+  // Whichever shells this machine has: sh always, and bash and zsh where installed. On macOS, bash
+  // is 3.2, which once ended a $( ) early at the ) of a case pattern inside a heredoc.
+  const shells = ['sh', 'bash', 'zsh'].filter((s) => spawnSync(s, ['-c', 'true']).status === 0);
+  const stub = 'aws() { while [ $# -gt 0 ]; do [ "$1" = --command ] && printf %s "$2"; shift; done; }';
+  /** What a printed command would pass as --command, with the script decoded. */
+  const sent = (shell, text) => {
+    const run = spawnSync(shell, ['-c', `${stub}\n${text}`], { encoding: 'utf8' });
+    assert.equal(run.status, 0, `${shell}: ${run.stderr}`);
+    const m = run.stdout.match(/^sh -c "echo (\S+) \| base64 -d \| sh( -s [^"]*)?" (\S+)$/);
+    assert.ok(m, `${shell}: ${run.stdout}`);
+    return { script: Buffer.from(m[1], 'base64').toString('utf8'), args: m[2] ?? '', label: m[3] };
+  };
 
-    assert.equal(run.status, 0, run.stderr);
-    assert.equal(run.stdout, remoteCommand(script, 'buwp:wp-eval'));
-  });
+  for (const shell of shells) {
+    test(`sends exactly the script when pasted into ${shell}`, () => {
+      const script = printableScript(words);
+      const got = sent(shell, printedCommand(target, task, script, 'buwp:wp-eval'));
+
+      assert.equal(got.script, `${script}\n`);
+      assert.equal(got.label, 'buwp:wp-eval');
+    });
+
+    test(`survives parentheses and case patterns in the script, in ${shell}`, () => {
+      const script = 'case "$1" in *.php) echo "php (yes)" ;; esac';
+      const got = sent(shell, printedCommand(target, task, script, 'buwp:cp', {
+        setup: ['b64=$(printf abc | base64)'], argsExpression: '$b64',
+      }));
+
+      assert.equal(got.script, `${script}\n`);
+      assert.equal(got.args, ' -s YWJj');
+    });
+  }
 
   test('picks another heredoc delimiter if the script holds the usual one', () => {
     const text = printedCommand(target, task, 'echo\nBUWP_SCRIPT', 'buwp:echo');
