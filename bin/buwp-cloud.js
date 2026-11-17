@@ -14,6 +14,7 @@ import { dirname, join } from 'path';
 // Import commands
 import clustersCommand from '../lib/commands/clusters.js';
 import configCommand from '../lib/commands/config.js';
+import initCommand from '../lib/commands/init.js';
 import statusCommand from '../lib/commands/status.js';
 import shellCommand from '../lib/commands/shell.js';
 import execCommand from '../lib/commands/exec.js';
@@ -181,6 +182,20 @@ program
   .option('--json', 'With --show: output JSON')
   .action(async (options) => {
     process.exitCode = await configCommand(options);
+  });
+
+program
+  .command('init')
+  .description('Set up buwp-cloud: pick from your AWS profiles the ones to search, and where to save them')
+  .option('--no-interactive', 'Skip the menus and save the --profile flags (or AWS_PROFILE), as config --init does')
+  .option('--profile <name>', 'An AWS profile to save, skipping the menus; repeat for more', collect)
+  .option('--home', 'Without the menus: save to ~/.buwp-cloud.json instead of the current directory')
+  .option('-f, --force', 'Without the menus: replace an existing file')
+  .addHelpText('after', `
+In a terminal, init lists the profiles in ~/.aws/config and ~/.aws/credentials (names only, never
+keys or tokens), checks what each reaches, and asks which to save and where.`)
+  .action(async (options) => {
+    process.exitCode = await initCommand(options);
   });
 
 // Show help if no command provided. This has to run before parsing: once subcommands exist,
