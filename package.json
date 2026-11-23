@@ -1,6 +1,6 @@
 {
   "name": "@bostonuniversity/buwp-cloud",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Command-line tools for operating Boston University's WordPress clusters on AWS ECS",
   "type": "module",
@@ -26,6 +26,14 @@
   ],
   "author": "Boston University",
   "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdub233/buwp-cloud.git"
+  },
+  "homepage": "https://github.com/jdub233/buwp-cloud#readme",
+  "bugs": {
+    "url": "https://github.com/jdub233/buwp-cloud/issues"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
