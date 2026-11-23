@@ -4,9 +4,11 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import clustersCommand, { formatTargetsTable } from '../lib/commands/clusters.js';
+import clustersCommand, { groupByProfile, formatClusterGroups } from '../lib/commands/clusters.js';
 import { toTarget } from '../lib/index.js';
-import { wordpressContext, contextBucket, fakeAws, awsError } from './fixtures.js';
+import { wordpressContext, contextBucket, fakeAws, awsError, ACCOUNT } from './fixtures.js';
+
+const OTHER_ACCOUNT = '210987654321';
 
 /**
  * Run the command against a fake AWS adapter and capture its output. The env is empty unless
@@ -25,35 +27,82 @@ async function runClusters(options, byProfile, config = {}, env = {}) {
   return { code, out, err };
 }
 
-describe('formatTargetsTable', () => {
-  test('aligns columns and spells out unset values', () => {
+describe('groupByProfile', () => {
+  const nprd = toTarget(wordpressContext(), { profile: 'example-nprd' });
+  const other = toTarget(wordpressContext({ STACK_ID: 'wp-z', ACCOUNT: OTHER_ACCOUNT }), { profile: 'example-other' });
+  const viaDefault = toTarget(wordpressContext(), { profile: null });
+
+  test('keeps the search order, leaves out failed profiles, and spots a repeated account', () => {
+    const groups = groupByProfile(
+      ['example-other', 'example-prd', 'example-nprd', null, 'example-empty'],
+      [nprd, other, viaDefault],
+      new Set(['example-prd'])
+    );
+
+    assert.deepEqual(groups.map((g) => [g.profile, g.account, g.sameAs, g.targets.length]), [
+      ['example-other', OTHER_ACCOUNT, null, 1],
+      ['example-nprd', ACCOUNT, null, 1],
+      [null, ACCOUNT, 'example-nprd', 1],
+      ['example-empty', null, null, 0],
+    ]);
+  });
+
+  test('names the default credential chain when it reached an account first', () => {
+    const [, second] = groupByProfile([null, 'example-nprd'], [viaDefault, nprd]);
+    assert.equal(second.sameAs, '(default credential chain)');
+  });
+});
+
+describe('formatClusterGroups', () => {
+  test('a table per profile under its heading, lined up across tables, with unset values spelled out', () => {
     const dev = toTarget(wordpressContext(), { profile: 'example-nprd' });
     const prod = toTarget(
       wordpressContext({
         STACK_ID: 'wp-long-name',
+        ACCOUNT: OTHER_ACCOUNT,
         WORDPRESS: { env: {} },
         JOBRUNNER: { schedule: 'rate(1 hour)', enabled: false },
       }),
-      {}
+      { profile: 'example-prd' }
     );
+    const groups = groupByProfile(['example-nprd', 'example-prd', 'example-empty'], [dev, prod]);
 
-    const lines = formatTargetsTable([dev, prod]).split('\n');
+    const lines = formatClusterGroups(groups).split('\n');
 
-    assert.equal(lines.length, 3);
-    assert.match(lines[0], /^TARGET\s+PROD\s+ENVIRONMENT\s+REGION\s+PROFILE\s+JOB RUNNER$/);
-    assert.match(lines[1], /^wp-x-example-test\s+no\s+development\s+us-east-1\s+example-nprd\s+rate\(5 minutes\)$/);
-    assert.match(lines[2], /^wp-long-name-example-test\s+yes\s+unset\s+us-east-1\s+\(default\)\s+rate\(1 hour\) \(disabled\)$/);
-    assert.equal(lines[0].indexOf('PROD'), lines[1].indexOf('no'), 'columns line up');
+    assert.deepEqual(lines.filter((l) => !l.startsWith('  ')), [
+      `example-nprd (account ${ACCOUNT})`,
+      '',
+      `example-prd (account ${OTHER_ACCOUNT})`,
+      '',
+      'example-empty',
+    ]);
+    assert.match(lines[1], /^ {2}TARGET\s+PROD\s+ENVIRONMENT\s+REGION\s+JOB RUNNER$/);
+    assert.match(lines[2], /^ {2}wp-x-example-test\s+no\s+development\s+us-east-1\s+rate\(5 minutes\)$/);
+    assert.match(lines[6], /^ {2}wp-long-name-example-test\s+yes\s+unset\s+us-east-1\s+rate\(1 hour\) \(disabled\)$/);
+    assert.equal(lines[2].indexOf('no'), lines[6].indexOf('yes'), 'columns line up across tables');
+    assert.equal(lines.at(-1), '  No WordPress clusters.');
   });
 
-  test('paints only the PROD cell of production targets', () => {
-    const dev = toTarget(wordpressContext());
-    const prod = toTarget(wordpressContext({ STACK_ID: 'wp-p', WORDPRESS: { env: { environmentType: 'production' } } }));
+  test('marks a profile that reaches an account already listed', () => {
+    const groups = groupByProfile(['example-nprd', null], [
+      toTarget(wordpressContext(), { profile: 'example-nprd' }),
+      toTarget(wordpressContext(), { profile: null }),
+    ]);
+    assert.match(formatClusterGroups(groups), /^\(default credential chain\) \(account \d+, same account as example-nprd\)$/m);
+  });
 
-    const lines = formatTargetsTable([dev, prod], { paintProd: (s) => `<${s}>` }).split('\n');
+  test('paints only the PROD cell of production targets, and the heading', () => {
+    const dev = toTarget(wordpressContext(), { profile: 'example-nprd' });
+    const prod = toTarget(wordpressContext({ STACK_ID: 'wp-p', WORDPRESS: { env: { environmentType: 'production' } } }), { profile: 'example-nprd' });
 
-    assert.doesNotMatch(lines[1], /</);
-    assert.match(lines[2], /<yes\s*>/);
+    const lines = formatClusterGroups(groupByProfile(['example-nprd'], [dev, prod]), {
+      paintProd: (s) => `<${s}>`,
+      paintHeading: (s) => `*${s}*`,
+    }).split('\n');
+
+    assert.match(lines[0], /^\*example-nprd\* \(account/);
+    assert.doesNotMatch(lines[2], /</);
+    assert.match(lines[3], /<yes\s*>/);
   });
 });
 
@@ -64,7 +113,7 @@ describe('clustersCommand', () => {
     const { code, out, err } = await runClusters({ profile: ['example-nprd'] }, { 'example-nprd': healthy });
 
     assert.equal(code, 0);
-    assert.match(out, /^TARGET/);
+    assert.match(out, new RegExp(`^example-nprd \\(account ${ACCOUNT}\\)\\n {2}TARGET`));
     assert.match(out, /wp-x-example-test/);
     assert.equal(err, '');
   });
@@ -97,8 +146,9 @@ describe('clustersCommand', () => {
       { AWS_PROFILE: 'example-nprd' }
     );
 
-    assert.match(out, /wp-x-example-test\s+no\s+development\s+us-east-1\s+example-nprd/);
-    assert.doesNotMatch(out, /\(default\)|example-prd/);
+    assert.match(out, /^example-nprd \(account/);
+    assert.match(out, /wp-x-example-test\s+no\s+development\s+us-east-1/);
+    assert.doesNotMatch(out, /\(default|example-prd/);
   });
 
   test('a partial failure warns on stderr with a hint, and still exits 0', async () => {
@@ -109,6 +159,7 @@ describe('clustersCommand', () => {
 
     assert.equal(code, 0);
     assert.match(out, /wp-x-example-test/);
+    assert.doesNotMatch(out, /example-prd/, 'a failed profile gets a warning, not a table');
     assert.match(err, /Warning:.*example-prd: ExpiredToken: expired/);
     assert.match(err, /\n {2}Check that AWS profile "example-prd" exists/);
   });

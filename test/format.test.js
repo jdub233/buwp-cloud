@@ -25,6 +25,10 @@ describe('formatTable', () => {
     });
     assert.equal(text, 'A  B\n1  2\n[3]  4');
   });
+
+  test('widens columns to given minimums, so separate tables line up', () => {
+    assert.equal(formatTable(['A', 'B'], [['1', '2']], { widths: [4, 1] }), 'A     B\n1     2');
+  });
 });
 
 describe('formatDuration', () => {
