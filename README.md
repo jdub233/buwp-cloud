@@ -22,14 +22,12 @@ This is an operational toolkit for working with running WordPress clusters on AW
 
 ## Install
 
-Install a release from GitHub, globally:
-
 ```bash
-npm install -g github:jdub233/buwp-cloud#v0.1.0
+npm install -g @bostonuniversity/buwp-cloud
 ```
 
 The examples here run `buwp-cloud` as a global command. If you install it into a project instead
-(`npm install --save-dev github:jdub233/buwp-cloud#v0.1.0`), put `npx` in front of each one.
+(`npm install --save-dev @bostonuniversity/buwp-cloud`), put `npx` in front of each one.
 
 ## Quickstart
 

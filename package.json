@@ -1,7 +1,6 @@
 {
   "name": "@bostonuniversity/buwp-cloud",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.1",
   "description": "Command-line tools for operating Boston University's WordPress clusters on AWS ECS",
   "type": "module",
   "main": "lib/index.js",
@@ -15,7 +14,8 @@
   "scripts": {
     "test": "node --test 'test/**/*.test.js'",
     "buwp-cloud": "node bin/buwp-cloud.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepublishOnly": "npm test && npm run lint"
   },
   "keywords": [
     "wordpress",
@@ -48,5 +48,8 @@
   },
   "devDependencies": {
     "eslint": "^8.50.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
